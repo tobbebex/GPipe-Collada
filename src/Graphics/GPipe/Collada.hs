@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable #-}
 -----------------------------------------------------------------------------
 --
 -- Module      :  Graphics.GPipe.Collada
@@ -191,7 +192,7 @@ transformsMat = foldl multmm identity . map transformMat
 ----------------------------------
 -- adopted from http://www.koders.com/cpp/fidA08C276050F880D11C2E49280DD9997478DC5BA1.aspx
 skew :: Float -> Vec3 Float -> Vec3 Float -> Mat44 Float
-skew angle a b = Vec.map homVec m `Vec.snoc` (homPoint 0)
+skew angle a b = Vec.map homVec m `Vec.snoc` homPoint 0
     where
         n2 = normalize b
         a1 = Vec.map (* (a `dot` n2)) n2
@@ -205,7 +206,7 @@ skew angle a b = Vec.map homVec m `Vec.snoc` (homPoint 0)
         m = outerProd n1 (Vec.map (* alpha) n2) + identity
         
         outerProd :: Vec3 Float -> Vec3 Float -> Mat33 Float
-        outerProd a b = Vec.map (* b) $ Vec.map (Vec.vec) a
+        outerProd a b = Vec.map (* b) $ Vec.map Vec.vec a
 
 -- | The complete transform matrix of all 'Transform' elements in a node.
 nodeMat :: Node -> Mat44 Float

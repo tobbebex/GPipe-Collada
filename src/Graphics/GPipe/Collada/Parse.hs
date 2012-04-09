@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+{-# OPTIONS_GHC -fcontext-stack=35  #-}
 -----------------------------------------------------------------------------
 --
 -- Module      :  Graphics.GPipe.Collada.Parse
@@ -50,6 +52,7 @@ import Control.Monad.Writer.Strict
 
 import Data.Typeable
 import Data.Dynamic
+import qualified Control.Monad as Control.Monad (unless)
 
 -- | Parse a string containing a collada document and return 'Either' an error message or the parsed Collada 'Scene'.
 readCollada :: String -> Either String Scene
@@ -120,7 +123,7 @@ getReqAttribute s c = case getAttribute s c of
                         "" -> throwError $ "Missing attribute " ++ s ++ " in " ++ errorPos c
                         a -> return a
 
-getStringContent = intercalate " " . mapMaybe fst . textlabelled children
+getStringContent = unwords . mapMaybe fst . textlabelled children
 
 getReqSingleElement el c = case c -=> keep /> tag el of
                             [] -> throwError $ "Missing " ++ el ++ " element in " ++ errorPos c
@@ -144,11 +147,10 @@ getFromListContents c = fromList ("Malformed contents of " ++ errorPos c) $ getS
 getFromContents c = fromString ("Malformed contents of " ++ errorPos c) $ getStringContent c
 
 getFromListLengthContents n c = do xs <- getFromListContents c
-                                   if (length xs == n)
-                                      then return xs
-                                      else if (length xs < n)
-                                            then throwError $ "Too few elements in " ++ errorPos c
-                                            else throwError $ "Too many elements in " ++ errorPos c
+                                   if length xs == n then return xs else
+                                      if (length xs < n) then
+                                        throwError $ "Too few elements in " ++ errorPos c else
+                                        throwError $ "Too many elements in " ++ errorPos c
 
 fromList err = mapM (fromString err) . words
 fromString err = parse . reads
@@ -172,18 +174,18 @@ readCollada' f s = do p <- xmlParse' f s
 
 
 
-parseDoc xs = do let sources = xs ==> deep (tagWith (flip elem ["animation","mesh","morph","skin","spline","convex_mesh","brep","nurbs","nurbs_surface"])) /> tag "source"
+parseDoc xs = do let sources = xs ==> deep (tagWith (`elem` ["animation", "mesh", "morph", "skin", "spline", "convex_mesh", "brep", "nurbs", "nurbs_surface"])) /> tag "source"
                  mapM_ parseArray $ sources ==> tagged (keep /> tagWith ("_array" `isSuffixOf`) `with` attr "id")
-                 mapM_ parseSource $ sources
+                 mapM_ parseSource sources
                  mapM_ parseCamera $ xs ==> tag "library_cameras" /> tag "camera" `with` attr "id"
                  mapM_ parseGeometry $ xs ==> tag "library_geometries" /> tag "geometry"
                  mapM_ parseLight $ xs ==> tag "library_lights" /> tag "light" `with` attr "id"
                  mapM_ parseNode $ xs ==> tag "library_nodes" /> tag "node"
                  mapM_ parseVisualScene $ xs ==> tag "library_visual_scenes" /> tag "visual_scene"
                  (url,c) <- case xs ==> attributed "url" (tag "scene" /> tag "instance_visual_scene") of
-                       [] -> throwError $ "Missing scene element with instance_visual_scene element found in COLLADA top element."
+                       [] -> throwError "Missing scene element with instance_visual_scene element found in COLLADA top element."
                        [x] -> return x
-                       _ -> throwError $ "Multiple instance_visual_scene elements in scene element found in COLLADA top element."
+                       _ -> throwError "Multiple instance_visual_scene elements in scene element found in COLLADA top element."
                  case localUrl url of
                         Nothing -> return Nothing
                         Just lurl -> do assert $ \refmap -> withError (missingLinkErr "visual_scene" lurl c) $ do Just (RefVisualScene _) <- return $ getRef lurl refmap
@@ -259,27 +261,27 @@ parseNode c | not $ null $ tag "node" c = do
                     case localUrl url of
                             Just id -> do assert $ \refmap -> withError (missingLinkErr "instance_node" id c) $ do Just (RefNode _) <- return $ getRef id refmap
                                                                                                                    return ()
-                                          return $ Just $ \refmap -> case getRef id refmap of Just (RefNode tree) -> sid $ tree
+                                          return $ Just $ \refmap -> case getRef id refmap of Just (RefNode tree) -> sid tree
                             _ -> return Nothing
 
 parseCameraInstances c = do url <- getReqAttribute "url" c
                             let sid = makeSID $ getAttribute "sid" c
                             case localUrl url of
-                                Nothing -> return $ Nothing
+                                Nothing -> return Nothing
                                 Just id -> do assert $ \ refmap -> withError (missingLinkErr "instance_camera" id c) $ do Just (RefCamera _) <- return $ getRef id refmap
                                                                                                                           return ()
                                               return $ Just $ \ refmap -> case getRef id refmap of Just (RefCamera content) -> sid content
 parseLightInstances c = do url <- getReqAttribute "url" c
                            let sid = makeSID $ getAttribute "sid" c
                            case localUrl url of
-                                Nothing -> return $ Nothing
+                                Nothing -> return Nothing
                                 Just id -> do assert $ \ refmap -> withError (missingLinkErr "instance_light" id c) $ do Just (RefLight _) <- return $ getRef id refmap
                                                                                                                          return ()
                                               return $ Just $ \ refmap -> case getRef id refmap of Just (RefLight content) -> sid content
 parseGeometryInstances c = do url <- getReqAttribute "url" c
                               let sid = makeSID $ getAttribute "sid" c
                               case localUrl url of
-                                Nothing -> return $ Nothing
+                                Nothing -> return Nothing
                                 Just id -> do assert $ \ refmap -> withError (missingLinkErr "instance_camera" id c) $ do Just (RefGeometry _) <- return $ getRef id refmap
                                                                                                                           return ()
                                               return $ Just $ \ refmap -> case getRef id refmap of Just (RefGeometry content) -> sid content
@@ -303,7 +305,7 @@ parseTransformations c = do let sid = makeSID $ getAttribute "sid" c
                                                return $ Just $ sid $ Skew a (Vec.fromList rot) (Vec.fromList trans)
                                 "translate" -> do v <- getFromListLengthContents 3 c
                                                   return $ Just $ sid $ Translate $ Vec.fromList v
-                                _ -> return $ Nothing
+                                _ -> return Nothing
 ---------------------------------------------------------------
 
 parseVisualScene c = do let id = getAttribute "id" c
@@ -386,16 +388,17 @@ parseLight c = do let id = getAttribute "id" c
 
 parseMesh id c = do v <- getReqSingleElement "vertices" c
                     vertices <- parseVertices v
-                    if null id 
-                     then return ()
-                     else do
-                        dynPrimListFs <- fmap concat $ mapM (parsePrimitives vertices) $ children c
-                        addRefF id $ \refmap -> let dynPrimLists = map (second ($refmap)) dynPrimListFs
-                                                in RefGeometry $ Mesh id (makeDynPrimStream dynPrimLists)
+                    Control.Monad.unless (null id) $
+                      do dynPrimListFs <- fmap concat $
+                                            mapM (parsePrimitives vertices) $ children c
+                         addRefF id $
+                           \ refmap ->
+                             let dynPrimLists = map (second ($refmap)) dynPrimListFs in
+                               RefGeometry $ Mesh id (makeDynPrimStream dynPrimLists)
 
           
 parseVertices verts = do insF <- fmap (map snd) $ mapM (parseInput False) $ verts -=> keep /> tag "input"
-                         let vertsF = \refmap -> Map.unions $ map ($refmap) insF
+                         let vertsF refmap = Map.unions $ map ($refmap) insF
                          case getAttribute "id" verts of
                             "" -> return ()
                             id -> addRefF id $ RefVertices . vertsF 
@@ -416,10 +419,15 @@ parseInput shared i = do source <- getReqAttribute "source" i
                                                          (true, "VERTEX", _) -> throwError $ missingLinkErr "vertices" id i
                                                          (_, _, Just (RefSource _)) -> return ()
                                                          _ -> throwError $ missingLinkErr "source" id i
-                                let f = \ refmap -> case (shared, semantic, getRef id refmap) of
-                                                         (true, "VERTEX", Just (RefVertices m)) -> Map.mapKeysMonotonic (++set) m
-                                                         (_, _, Just (RefSource Nothing)) -> Map.empty
-                                                         (_, _, Just (RefSource (Just source))) -> Map.singleton (semantic++set) source
+                                let f refmap
+                                          = case (shared, semantic, getRef id refmap) of
+                                                (true, "VERTEX", Just (RefVertices m)) -> Map.mapKeysMonotonic
+                                                                                            (++ set)
+                                                                                            m
+                                                (_, _, Just (RefSource Nothing)) -> Map.empty
+                                                (_, _, Just (RefSource (Just source))) -> Map.singleton
+                                                                                            (semantic ++ set)
+                                                                                            source
                                 return (offset, f)
                                                                        
               
@@ -446,24 +454,25 @@ parsePrimitives vertices p = case mprimtype of
             "tristrips" -> Just TriangleStrip
             _ -> Nothing
           ps = p -=> keep /> tag "p"
-          combine :: (RefMap -> Map String ([[Float]], Int)) -> (RefMap -> Map String ([[Float]], Int)) -> (RefMap -> Map String ([[Float]], Int))
-          combine f g = \refmap -> f refmap `Map.union` g refmap
+          combine :: (RefMap -> Map String ([[Float]], Int)) -> (RefMap -> Map String ([[Float]], Int)) -> RefMap -> Map String ([[Float]], Int)
+          combine f g refmap = f refmap `Map.union` g refmap
 
 parseP :: Triangle -> Map Int (RefMap -> Map String ([[Float]], Int)) -> Int -> Content Posn -> Parser ((String, Triangle, Maybe [Int]), RefMap -> Map String [[Float]])
 parseP primtype inputs count p = do let pStride = 1 + fst (Map.findMax inputs)
                                         material = getAttribute "material" p
                                     pLists <- fmap (splitIn pStride) $ do
                                                     pl <- getFromListContents p
-                                                    if (primtype == TriangleList)
-                                                        then do when (length pl < count * 3 * pStride) $ throwError $ "Too few indices in " ++ errorPos p
-                                                                return $ take (count * 3 * pStride) pl
-                                                        else return pl
+                                                    if primtype == TriangleList then
+                                                      do when (length pl < count * 3 * pStride) $
+                                                           throwError $ "Too few indices in " ++ errorPos p
+                                                         return $ take (count * 3 * pStride) pl
+                                                      else return pl
                                     case map (first (pLists !!)) $ Map.toList inputs of
                                             [(indices,mF)] -> return ((material, primtype, Just indices), Map.map fst . mF)
                                             xs -> return ((material, primtype, Nothing), combine $ map pickIndices xs)
-    where pickIndices (indices, mF) = \refmap -> Map.map pickIndices' (mF refmap)
+    where pickIndices (indices, mF) = Map.map pickIndices' . mF
                 where pickIndices' (xs, len) = let arr = listArray (0,len) xs in map (arr!) indices
-          combine mFs = \refmap -> Map.unions $ map ($refmap) mFs
+          combine mFs refmap = Map.unions $ map ($refmap) mFs
           splitIn n = reverse . transpose . splitIn' [] n -- [[offset 0], [offset 1], [offset 2]]
                 where
                     splitIn' acc 0 xs = acc:splitIn' [] n xs
@@ -484,11 +493,11 @@ splitParts ((material, primtype, mindices), m) = let mlist = Map.toAscList m
                                                  in ((material, names, sizes), (aabb,((primtype, mindices), input))) 
 
 
-makeAABB Nothing = AABB (Vec.vec (-inf)) (Vec.vec (inf))
+makeAABB Nothing = AABB (Vec.vec (-inf)) (Vec.vec inf)
 makeAABB (Just xs) = mconcat $ map pointToAABB xs
                 where pointToAABB (x:y:z:_) = let p = x:.y:.z:.() in AABB p p
-                      pointToAABB (x:y:_) = AABB (x:.y:.(-inf):.()) (x:.y:.(inf):.())
-                      pointToAABB (x:_) = AABB (x:.(-inf):.(-inf):.()) (x:.(inf):.(inf):.())
+                      pointToAABB (x:y:_) = AABB (x:.y:.(-inf):.()) (x:.y:.inf:.())
+                      pointToAABB (x:_) = AABB (x:.(-inf):.(-inf):.()) (x:.inf:.inf:.())
                       pointToAABB (_) = AABB (Vec.vec (-inf)) (Vec.vec inf)
 
 inf :: Float
@@ -503,7 +512,7 @@ makePrimGroup xs@(((material, names, sizes), _):_) = TriangleMesh material desc 
           xs' = map (second snd) xs
           aabb = mconcat $ map (fst . snd) xs
           desc = Map.fromAscList $ zip names $ map makeTypeRep sizes
-          pstream = fmap (Map.fromAscList . zip names . map (uncurry makeDyn) . zip sizes . takeBy sizes) $ makeListStream (sum sizes) xs'           
+          pstream = fmap (Map.fromAscList . zip names . zipWith makeDyn sizes . takeBy sizes) $ makeListStream (sum sizes) xs'           
 
 type S2 a = Succ (Succ a)
 type S4 a = S2 (S2 a)
@@ -554,52 +563,21 @@ makeListStream n = case n of
     14 -> toStreamUsingLength n14
     15 -> toStreamUsingLength n15
     16 -> toStreamUsingLength n16
-    17 -> toStreamUsingLength n17
-    18 -> toStreamUsingLength n18
-    19 -> toStreamUsingLength n19
-    20 -> toStreamUsingLength $ s10 n10
-    21 -> toStreamUsingLength $ s10 n11
-    22 -> toStreamUsingLength $ s10 n12
-    23 -> toStreamUsingLength $ s10 n13
-    24 -> toStreamUsingLength $ s10 n14
-    25 -> toStreamUsingLength $ s10 n15
-    26 -> toStreamUsingLength $ s10 n16
-    27 -> toStreamUsingLength $ s10 n17
-    28 -> toStreamUsingLength $ s10 n18
-    29 -> toStreamUsingLength $ s10 n19
-    30 -> toStreamUsingLength $ s10 $ s10 n10
-    31 -> toStreamUsingLength $ s10 $ s10 n11
-    32 -> toStreamUsingLength $ s10 $ s10 n12
-    33 -> toStreamUsingLength $ s10 $ s10 n13
-    34 -> toStreamUsingLength $ s10 $ s10 n14
-    35 -> toStreamUsingLength $ s10 $ s10 n15
-    36 -> toStreamUsingLength $ s10 $ s10 n16
-    37 -> toStreamUsingLength $ s10 $ s10 n17
-    38 -> toStreamUsingLength $ s10 $ s10 n18
-    39 -> toStreamUsingLength $ s10 $ s10 n19
-    40 -> toStreamUsingLength $ s10 $ s10 $ s10 n10
-    41 -> toStreamUsingLength $ s10 $ s10 $ s10 n11
-    42 -> toStreamUsingLength $ s10 $ s10 $ s10 n12
-    43 -> toStreamUsingLength $ s10 $ s10 $ s10 n13
-    44 -> toStreamUsingLength $ s10 $ s10 $ s10 n14
-    45 -> toStreamUsingLength $ s10 $ s10 $ s10 n15
-    46 -> toStreamUsingLength $ s10 $ s10 $ s10 n16
-    47 -> toStreamUsingLength $ s10 $ s10 $ s10 n17
-    48 -> toStreamUsingLength $ s10 $ s10 $ s10 n18
-    49 -> toStreamUsingLength $ s10 $ s10 $ s10 n19
-    50 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n10
-    51 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n11
-    52 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n12
-    53 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n13
-    54 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n14
-    55 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n15
-    56 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n16
-    57 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n17
-    58 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n18
-    59 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 n19
-    60 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 $ s10 n10
-    61 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 $ s10 n11
-    62 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 $ s10 n12
-    63 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 $ s10 n13
-    64 -> toStreamUsingLength $ s10 $ s10 $ s10 $ s10 $ s10 n14          
+--    17 -> toStreamUsingLength n17
+--    18 -> toStreamUsingLength n18
+--    19 -> toStreamUsingLength n19
+--    20 -> toStreamUsingLength $ s10 n10
+--    21 -> toStreamUsingLength $ s10 n11
+--    22 -> toStreamUsingLength $ s10 n12
+--    23 -> toStreamUsingLength $ s10 n13
+--    24 -> toStreamUsingLength $ s10 n14
+--    25 -> toStreamUsingLength $ s10 n15
+--    26 -> toStreamUsingLength $ s10 n16
+--    27 -> toStreamUsingLength $ s10 n17
+--    28 -> toStreamUsingLength $ s10 n18
+--    29 -> toStreamUsingLength $ s10 n19
+--    30 -> toStreamUsingLength $ s10 $ s10 n10
+--    31 -> toStreamUsingLength $ s10 $ s10 n11
+--    32 -> toStreamUsingLength $ s10 $ s10 n12
+       
     

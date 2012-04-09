@@ -88,7 +88,7 @@ topDownSIDPath f = topDown g []
 --   Use 'nodeMat' to get the @Mat44 Float@ from a node. The accumulated matrix for each node will contain the node's own transforms.
 topDownTransform :: (x -> Mat44 Float) -> Tree x -> Tree (Mat44 Float,x)
 topDownTransform f = topDown g identity
-    where g t x = let t' = t `multmm` (f x) in (t', (t', x))
+    where g t x = let t' = t `multmm` f x in (t', (t', x))
 
 -- | For each 'SID'-attributed element in a list, apply the provided function. The elements where the function evaluates to 'Nothing' are removed.
 alterSID :: (String -> a -> Maybe a) -> [(SID,a)] -> [(SID,a)]
