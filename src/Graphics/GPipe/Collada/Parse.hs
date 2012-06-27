@@ -52,7 +52,7 @@ import Control.Monad.Writer.Strict
 
 import Data.Typeable
 import Data.Dynamic
-import qualified Control.Monad as Control.Monad (unless)
+import qualified Control.Monad (unless)
 
 -- | Parse a string containing a collada document and return 'Either' an error message or the parsed Collada 'Scene'.
 readCollada :: String -> Either String Scene
@@ -107,7 +107,7 @@ localUrl _ = Nothing
 
 missingLinkErr el id c = el ++ " element with id '" ++ id ++ "' not found when processing " ++ errorPos c
 
-errorPos c@(CElem (Elem n _ _) p) = n ++ " element in " ++ show p ++ "."
+errorPos c@(CElem (Elem n _ _) p) = show n ++ " element in " ++ show p ++ "."
 
 withError err m = m `mplus` throwError err
 
@@ -148,9 +148,9 @@ getFromContents c = fromString ("Malformed contents of " ++ errorPos c) $ getStr
 
 getFromListLengthContents n c = do xs <- getFromListContents c
                                    if length xs == n then return xs else
-                                      if (length xs < n) then
-                                        throwError $ "Too few elements in " ++ errorPos c else
-                                        throwError $ "Too many elements in " ++ errorPos c
+                                      if length xs < n 
+                                          then throwError $ "Too few elements in " ++ errorPos c 
+                                          else throwError $ "Too many elements in " ++ errorPos c
 
 fromList err = mapM (fromString err) . words
 fromString err = parse . reads
@@ -167,7 +167,7 @@ x -=> f = f x
 -- Parser actions:
 
 readCollada' f s = do p <- xmlParse' f s
-                      xs <- withError "Expecting COLLADA top-element" $ do XML.Document _ _ (Elem "COLLADA" _ xs) _ <- return p
+                      xs <- withError "Expecting COLLADA top-element" $ do XML.Document _ _ (Elem (N "COLLADA") _ xs) _ <- return p
                                                                            return xs
                       RefVisualScene vs <- runParser $ parseDoc xs
                       return vs
