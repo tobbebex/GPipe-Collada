@@ -45,7 +45,6 @@ import Data.Maybe
 import qualified Data.Vec.Base as Vec
 import Data.Vec.Base ((:.)(..), Mat44, Mat33, Vec3)
 import Data.Vec.LinAlg as Vec
-import Data.Vec.LinAlg.Transform3D
 import Data.Vec.Nat
 import Control.Arrow (first)
 import Data.Monoid
@@ -142,6 +141,6 @@ viewScene tree (w:.h:.()) = framebuffer
         let normMat = Vec.transpose $ fromJust $ invert $ Vec.map (Vec.take n3) $ Vec.take n3 modelView
         return $ fmap (\v -> let p = homPoint $ fromJust $ dynVertex v "POSITION"
                                  nx:.ny:.nz:.() = (toGPU normMat :: Mat33 (Vertex Float)) `multmv` fromJust (dynVertex v "NORMAL")
-                             in ((toGPU modelViewProj :: Mat44 (Vertex Float)) `multmv` p, max nz 0)
+                             in ((toGPU modelViewProj :: Mat44 (Vertex Float)) `multmv` p, maxB nz 0)
                       ) pstream
             

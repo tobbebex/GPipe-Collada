@@ -25,7 +25,6 @@ import qualified Data.Vec.Base as Vec
 import Data.Vec.Base ((:.)(..), Mat44, Mat33, Vec3)
 import Data.Vec.Nat
 import Data.Vec.LinAlg
-import Data.Vec.LinAlg.Transform3D
 
 -- | An axis aligned bounding box.
 data AABB = AABB {

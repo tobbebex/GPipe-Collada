@@ -48,13 +48,13 @@ import Data.Tree
 import Data.Map (Map)
 import Data.Maybe
 import Data.Monoid
+import Graphics.GPipe.Stream
 import Graphics.GPipe.Stream.Primitive
 import Graphics.GPipe.Format
 import qualified Data.Vec as Vec
 import Data.Vec (Vec2, Vec3, Mat44, Mat33, (:.)(..), )
 import Data.Vec.LinAlg
 import Data.Vec.AABB
-import Data.Vec.LinAlg.Transform3D
 
 import Data.Typeable
 import Data.Dynamic
@@ -159,7 +159,8 @@ type ID = String
 type SID = Maybe String
 type Semantic = String
 
-deriving instance Typeable1 Vertex
+deriving instance Typeable2 Shader
+deriving instance Typeable V
 deriving instance Typeable2 (:.)
 
 ---------------------------------------------------
